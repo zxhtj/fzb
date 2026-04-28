@@ -143,7 +143,18 @@ RC DefaultHandler::create_table(const char *dbname, const char *relation_name, s
   return db->create_table(relation_name, attributes);
 }
 
-RC DefaultHandler::drop_table(const char *dbname, const char *relation_name) { return RC::UNIMPLEMENTED; }
+RC DefaultHandler::drop_table(const char* dbname, const char* relation_name)
+{
+    // 1. 获取当前数据库实例
+    Db* db = find_db(dbname);
+    if (db == nullptr) {
+        // 数据库未打开或不存在
+        return RC::SCHEMA_DB_NOT_OPENED;
+    }
+
+    // 2. 调用底层 Db 对象的 drop_table 接口执行实际删除
+    return db->drop_table(relation_name);
+}
 
 Db *DefaultHandler::find_db(const char *dbname) const
 {
