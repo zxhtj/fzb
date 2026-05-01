@@ -1,4 +1,3 @@
-
 %{
 
 #include <stdio.h>
@@ -8,10 +7,16 @@
 
 #include "common/log/log.h"
 #include "common/lang/string.h"
+
+// --- 修改重点：严格调整这 4 行的包含顺序 ---
+// 1. 必须先包含业务类型的声明（提供 ParsedSqlNode、Value 等 AST 节点的定义）
 #include "sql/parser/parse_defs.h"
-#include "sql/parser/yacc_sql.hpp"
-#include "sql/parser/lex_sql.h"
 #include "sql/expr/expression.h"
+
+// 2. 然后再包含 Yacc 生成的 hpp 和 lex 头文件（此时它们所需的类型都已知晓）
+#include "sql/parser/yacc_sql.hpp"  
+#include "sql/parser/lex_sql.h"     
+// ------------------------------------------
 
 using namespace std;
 
@@ -89,6 +94,8 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         INT_T
         STRING_T
         FLOAT_T
+        DATE_T
+        DATE
         HELP
         EXIT
         DOT //QUOTE
@@ -130,6 +137,9 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
   char *                                     string;
   int                                        number;
   float                                      floats;
+  /* --- 下方为新增的 UPDATE 结构体指针 --- */
+  struct UpdateClause * update_clause;
+  struct UpdateClauseList * update_clause_list;
 }
 
 %token <number> NUMBER
@@ -177,6 +187,8 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
 %type <sql_node>            help_stmt
 %type <sql_node>            exit_stmt
 %type <sql_node>            command_wrapper
+%type <update_clause>       update_clause
+%type <update_clause_list>  update_clause_list
 // commands should be a list but I use a single command instead
 %type <sql_node>            commands
 
@@ -360,6 +372,7 @@ type:
     INT_T      { $$ = static_cast<int>(AttrType::INTS); }
     | STRING_T { $$ = static_cast<int>(AttrType::CHARS); }
     | FLOAT_T  { $$ = static_cast<int>(AttrType::FLOATS); }
+    | DATE_T   { $$ = static_cast<int>(AttrType::DATES); }
     ;
 insert_stmt:        /*insert   语句的语法解析树*/
     INSERT INTO ID VALUES LBRACE value value_list RBRACE 
@@ -374,6 +387,64 @@ insert_stmt:        /*insert   语句的语法解析树*/
       std::reverse($$->insertion.values.begin(), $$->insertion.values.end());
       delete $6;
       free($3);
+    }
+    ;
+
+    /* ========================================================================= */
+/* UPDATE 语句规则定义 */
+/* ========================================================================= */
+
+update_stmt:
+    UPDATE ID SET update_clause_list opt_where_clause
+    {
+      $$ = new ParsedSqlNode(SCF_UPDATE);
+      $$->update.relation_name = $2;
+      
+      // 将临时列表中的字段与值转移至抽象语法树节点
+      $$->update.attributes = $4->attributes;
+      $$->update.values = $4->values;
+      
+      // 挂载 WHERE 条件
+      if ($5 != nullptr) {
+        $$->update.conditions = *$5;
+        delete $5;
+      }
+      
+      // 清理临时数据结构与词法解析出的字符串内存
+      delete $4;
+      free($2);
+    }
+    ;
+
+update_clause_list:
+    update_clause
+    {
+      // 归约单个更新子句
+      $$ = new UpdateClauseList();
+      $$->attributes.push_back($1->attr);
+      $$->values.push_back($1->val);
+      delete $1;
+    }
+    | update_clause_list COMMA update_clause
+    {
+      // 归约包含逗号分隔的多个更新子句
+      $$ = $1;
+      $$->attributes.push_back($3->attr);
+      $$->values.push_back($3->val);
+      delete $3;
+    }
+    ;
+
+update_clause:
+    rel_attr EQ value
+    {
+      // 解析 `列名 = 值` 结构
+      $$ = new UpdateClause();
+      $$->attr = *$1; 
+      $$->val = *$3;
+      
+      delete $1;
+      delete $3;
     }
     ;
 

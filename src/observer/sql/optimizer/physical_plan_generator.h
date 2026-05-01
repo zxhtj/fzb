@@ -57,4 +57,5 @@ private:
   RC create_vec_plan(TableGetLogicalOperator &logical_oper, std::unique_ptr<PhysicalOperator> &oper);
   RC create_vec_plan(GroupByLogicalOperator &logical_oper, std::unique_ptr<PhysicalOperator> &oper);
   RC create_vec_plan(ExplainLogicalOperator &logical_oper, std::unique_ptr<PhysicalOperator> &oper);
+  RC create_update_operator(LogicalOperator& logical_oper, std::unique_ptr<PhysicalOperator>& physical_oper);
 };

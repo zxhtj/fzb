@@ -920,3 +920,23 @@ RC ChunkFileScanner::next_chunk(Chunk &chunk)
   record_page_handler_->cleanup();
   return RC::RECORD_EOF;
 }
+
+RC RecordFileHandler::update_record(const RID& rid, const char* data) {
+    if (data == nullptr) {
+        return RC::INVALID_ARGUMENT;
+    }
+
+    // 构造一个 Lambda 表达式作为更新器
+    // visit_record 会在内部获取到对应槽位的 record 引用，并将其传入该 Lambda
+    auto updater = [data, this](Record& record) -> bool {
+        // record.data() 指向的是 Buffer Pool 中的真实内存页地址
+        // 直接使用 memcpy 覆盖该处内存
+        memcpy(const_cast<char*>(record.data()), data, table_meta_->record_size());
+
+        // 返回 true，visit_record 底层接收到 true 后，会自动调用 mark_dirty 标记脏页并落盘
+        return true;
+        };
+
+    // 调用内部的安全访问接口
+    return visit_record(rid, updater);
+}

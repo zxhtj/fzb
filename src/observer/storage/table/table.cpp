@@ -31,6 +31,7 @@ See the Mulan PSL v2 for more details. */
 #include "storage/table/table.h"
 #include "storage/trx/trx.h"
 
+
 Table::~Table()
 {
   if (record_handler_ != nullptr) {
@@ -568,4 +569,15 @@ RC Table::sync()
   rc = data_buffer_pool_->flush_all_pages();
   LOG_INFO("Sync table over. table=%s", name());
   return rc;
+}
+
+RC Table::update_record(const Record& old_record, const char* new_data) {
+    RC rc = delete_record(old_record); // 先删
+    if (rc != RC::SUCCESS) return rc;
+
+    Record new_rec;
+    rc = new_rec.copy_data(new_data, table_meta_.record_size());
+    if (rc != RC::SUCCESS) return rc;
+
+    return insert_record(new_rec); // 后插
 }

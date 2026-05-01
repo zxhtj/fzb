@@ -26,6 +26,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/project_logical_operator.h"
 #include "sql/operator/table_get_logical_operator.h"
 #include "sql/operator/group_by_logical_operator.h"
+#include "sql/operator/update_logical_operator.h"
 
 #include "sql/stmt/calc_stmt.h"
 #include "sql/stmt/delete_stmt.h"
@@ -43,6 +44,7 @@ using namespace common;
 RC LogicalPlanGenerator::create(Stmt *stmt, unique_ptr<LogicalOperator> &logical_operator)
 {
   RC rc = RC::SUCCESS;
+
   switch (stmt->type()) {
     case StmtType::CALC: {
       CalcStmt *calc_stmt = static_cast<CalcStmt *>(stmt);
@@ -67,6 +69,11 @@ RC LogicalPlanGenerator::create(Stmt *stmt, unique_ptr<LogicalOperator> &logical
 
       rc = create_plan(delete_stmt, logical_operator);
     } break;
+
+    case StmtType::UPDATE: {
+        rc = create_update_plan(static_cast<UpdateStmt*>(stmt), logical_operator);
+        break;
+    }
 
     case StmtType::EXPLAIN: {
       ExplainStmt *explain_stmt = static_cast<ExplainStmt *>(stmt);
@@ -219,10 +226,21 @@ RC LogicalPlanGenerator::create_plan(FilterStmt *filter_stmt, unique_ptr<Logical
 
 int LogicalPlanGenerator::implicit_cast_cost(AttrType from, AttrType to)
 {
-  if (from == to) {
-    return 0;
-  }
-  return DataType::type_instance(from)->cast_cost(to);
+    if (from == to) {
+        return 0;
+    }
+
+    // 核心修改点：控制转换方向
+    // 1. 常量字符串转为日期，代价最小，促使优化器将右侧的 '2023-01-01' 提前转为日期
+    if (from == AttrType::CHARS && to == AttrType::DATES) {
+        return 1;
+    }
+    // 2. 日期列转为字符串，代价略大，避免每行数据进行无谓的格式化开销
+    if (from == AttrType::DATES && to == AttrType::CHARS) {
+        return 2;
+    }
+
+    return DataType::type_instance(from)->cast_cost(to);
 }
 
 RC LogicalPlanGenerator::create_plan(InsertStmt *insert_stmt, unique_ptr<LogicalOperator> &logical_operator)
@@ -276,6 +294,36 @@ RC LogicalPlanGenerator::create_plan(ExplainStmt *explain_stmt, unique_ptr<Logic
   logical_operator = unique_ptr<LogicalOperator>(new ExplainLogicalOperator);
   logical_operator->add_child(std::move(child_oper));
   return rc;
+}
+
+RC LogicalPlanGenerator::create_update_plan(UpdateStmt* update_stmt, std::unique_ptr<LogicalOperator>& logical_oper)
+{
+    RC rc = RC::SUCCESS;
+
+    // 1. 创建底层表扫描算子
+    std::unique_ptr<LogicalOperator> table_scan_oper = std::make_unique<TableGetLogicalOperator>(update_stmt->table(), ReadWriteMode::READ_WRITE);
+
+    std::unique_ptr<LogicalOperator> current_oper = std::move(table_scan_oper);
+
+    // 2. 如果存在 WHERE 条件，创建过滤算子，并将表扫描作为其子节点
+    if (update_stmt->filter_stmt() != nullptr) {
+        std::unique_ptr<LogicalOperator> predicate_oper;
+        // 直接调用提供的针对 FilterStmt 的 create_plan 函数
+        rc = create_plan(update_stmt->filter_stmt(), predicate_oper);
+        if (rc != RC::SUCCESS) {
+            return rc; // 严谨处理可能的解析错误
+        }
+
+        predicate_oper->add_child(std::move(current_oper));
+        current_oper = std::move(predicate_oper);
+    }
+
+    // 3. 创建 UPDATE 逻辑算子，并将上述节点作为其子节点
+    std::unique_ptr<LogicalOperator> update_oper = std::make_unique<UpdateLogicalOperator>(update_stmt);
+    update_oper->add_child(std::move(current_oper));
+
+    logical_oper = std::move(update_oper);
+    return rc;
 }
 
 RC LogicalPlanGenerator::create_group_by_plan(SelectStmt *select_stmt, unique_ptr<LogicalOperator> &logical_operator)

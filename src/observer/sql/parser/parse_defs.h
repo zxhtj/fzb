@@ -224,6 +224,17 @@ struct SetVariableSqlNode
   Value       value;
 };
 
+// 辅助临时结构，用于 yacc 规约时的列表传递
+struct UpdateClause {
+    RelAttrSqlNode attr;
+    Value val;
+};
+
+struct UpdateClauseList {
+    std::vector<RelAttrSqlNode> attributes;
+    std::vector<Value> values;
+};
+
 class ParsedSqlNode;
 
 /**

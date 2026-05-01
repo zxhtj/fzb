@@ -42,6 +42,9 @@ public:
   void set_int(Record &record, int value);
   int  get_int(const Record &record);
 
+  void set_date(Record& record, int value);
+  int  get_date(const Record& record);
+
   const char *get_data(const Record &record);
 
 private:

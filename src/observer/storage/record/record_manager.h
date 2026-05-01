@@ -380,6 +380,14 @@ public:
   RC delete_record(const RID *rid);
 
   /**
+   * @brief 根据 RID 更新指定记录的数据
+   *
+   * @param rid   待更新记录的标识符
+   * @param data  新的记录内容
+   */
+  RC update_record(const RID& rid, const char* data);
+
+  /**
    * @brief 插入一个新的记录到指定文件中，并返回该记录的标识符
    *
    * @param data        纪录内容

@@ -77,15 +77,33 @@ CastExpr::CastExpr(unique_ptr<Expression> child, AttrType cast_type) : child_(st
 
 CastExpr::~CastExpr() {}
 
-RC CastExpr::cast(const Value &value, Value &cast_value) const
+RC CastExpr::cast(const Value& value, Value& cast_value) const
 {
-  RC rc = RC::SUCCESS;
-  if (this->value_type() == value.attr_type()) {
-    cast_value = value;
+    RC rc = RC::SUCCESS;
+    if (this->value_type() == value.attr_type()) {
+        cast_value = value;
+        return rc;
+    }
+
+    // --- 新增逻辑：专门拦截处理 CHARS 到 DATES 的转换 ---
+    if (value.attr_type() == AttrType::CHARS && cast_type_ == AttrType::DATES) {
+        // 调用我们之前在 value.cpp 中重写过的带 YYYY-MM-DD 解析能力的 get_int()
+        int date_val = value.get_int();
+
+        // 如果解析失败，get_int 会返回 0
+        if (date_val == 0) {
+            return RC::INVALID_ARGUMENT;
+        }
+
+        // 调用我们在 value.cpp 中新增的 set_date 方法
+        cast_value.set_date(date_val);
+        return RC::SUCCESS;
+    }
+    // --- 结束 ---
+
+    // 其他类型转换走原有逻辑
+    rc = Value::cast_to(value, cast_type_, cast_value);
     return rc;
-  }
-  rc = Value::cast_to(value, cast_type_, cast_value);
-  return rc;
 }
 
 RC CastExpr::get_value(const Tuple &tuple, Value &result) const

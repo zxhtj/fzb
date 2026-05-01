@@ -19,6 +19,8 @@ See the Mulan PSL v2 for more details. */
 #include "common/lang/sstream.h"
 #include "common/lang/string.h"
 #include "common/log/log.h"
+#include <cstdio>
+#include <cstring>
 
 Value::Value(int val) { set_int(val); }
 
@@ -117,6 +119,10 @@ void Value::set_data(char *data, int length)
       value_.int_value_ = *(int *)data;
       length_           = length;
     } break;
+    case AttrType::DATES: {               // <--- 新增 DATE 分支
+        value_.int_value_ = *(int*)data;   // DATE 底层也是作为 4 字节整数存储
+        length_ = length;
+    } break;
     case AttrType::FLOATS: {
       value_.float_value_ = *(float *)data;
       length_             = length;
@@ -145,6 +151,13 @@ void Value::set_float(float val)
   attr_type_          = AttrType::FLOATS;
   value_.float_value_ = val;
   length_             = sizeof(val);
+}
+void Value::set_date(int val)
+{
+    this->attr_type_ = AttrType::DATES;
+    this->length_ = 4;                   // 日期底层用 4 字节 int 存储
+    this->value_.int_value_ = val;          // 复用整型存储结构
+    this->own_data_ = false;
 }
 void Value::set_boolean(bool val)
 {
@@ -180,6 +193,9 @@ void Value::set_value(const Value &value)
   switch (value.attr_type_) {
     case AttrType::INTS: {
       set_int(value.get_int());
+    } break;
+    case AttrType::DATES: {
+        set_date(value.get_int());
     } break;
     case AttrType::FLOATS: {
       set_float(value.get_float());
@@ -220,6 +236,14 @@ const char *Value::data() const
 
 string Value::to_string() const
 {
+    if (this->attr_type_ == AttrType::DATES) {
+        int year = value_.int_value_ / 10000;
+        int month = (value_.int_value_ % 10000) / 100;
+        int day = value_.int_value_ % 100;
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%04d-%02d-%02d", year, month, day);
+        return std::string(buf);
+    }
   string res;
   RC     rc = DataType::type_instance(this->attr_type_)->to_string(*this, res);
   if (OB_FAIL(rc)) {
@@ -233,18 +257,33 @@ int Value::compare(const Value &other) const { return DataType::type_instance(th
 
 int Value::get_int() const
 {
-  switch (attr_type_) {
+    switch (attr_type_) {
     case AttrType::CHARS: {
-      try {
-        return (int)(std::stol(value_.pointer_value_));
-      } catch (exception const &ex) {
-        LOG_TRACE("failed to convert string to number. s=%s, ex=%s", value_.pointer_value_, ex.what());
-        return 0;
-      }
+        try {
+            // --- 新增：针对日期格式 YYYY-MM-DD 的解析逻辑 ---
+            std::string s(value_.pointer_value_);
+            if (s.length() == 10 && s[4] == '-' && s[7] == '-') {
+                int year = std::stoi(s.substr(0, 4));
+                int month = std::stoi(s.substr(5, 2));
+                int day = std::stoi(s.substr(8, 2));
+                // 将 2023-01-01 转换为整数 20230101
+                return year * 10000 + month * 100 + day;
+            }
+            // --- 结束 ---
+
+            return (int)(std::stol(value_.pointer_value_));
+        }
+        catch (exception const& ex) {
+            LOG_TRACE("failed to convert string to number. s=%s, ex=%s", value_.pointer_value_, ex.what());
+            return 0;
+        }
     }
     case AttrType::INTS: {
       return value_.int_value_;
     }
+    case AttrType::DATES: {
+        return value_.int_value_;
+    } 
     case AttrType::FLOATS: {
       return (int)(value_.float_value_);
     }
@@ -272,6 +311,9 @@ float Value::get_float() const
     } break;
     case AttrType::INTS: {
       return float(value_.int_value_);
+    } break;
+    case AttrType::DATES: {
+        return float(value_.int_value_);
     } break;
     case AttrType::FLOATS: {
       return value_.float_value_;
@@ -312,6 +354,9 @@ bool Value::get_boolean() const
     } break;
     case AttrType::INTS: {
       return value_.int_value_ != 0;
+    } break;
+    case AttrType::DATES: {
+        return value_.int_value_ != 0;
     } break;
     case AttrType::FLOATS: {
       float val = value_.float_value_;

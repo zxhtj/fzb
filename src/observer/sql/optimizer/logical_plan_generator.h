@@ -25,6 +25,7 @@ class SelectStmt;
 class FilterStmt;
 class InsertStmt;
 class DeleteStmt;
+class UpdateStmt;  // 新增这一行
 class ExplainStmt;
 class LogicalOperator;
 
@@ -45,6 +46,7 @@ private:
   RC create_plan(ExplainStmt *explain_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
 
   RC create_group_by_plan(SelectStmt *select_stmt, std::unique_ptr<LogicalOperator> &logical_operator);
+  RC create_update_plan(UpdateStmt* update_stmt, std::unique_ptr<LogicalOperator>& logical_oper);
 
   int implicit_cast_cost(AttrType from, AttrType to);
 };

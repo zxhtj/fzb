@@ -33,3 +33,19 @@ int Field::get_int(const Record &record)
 }
 
 const char *Field::get_data(const Record &record) { return record.data() + field_->offset(); }
+
+void Field::set_date(Record& record, int value)
+{
+    ASSERT(field_->type() == AttrType::DATES, "could not set date value to a non-date field");
+    ASSERT(field_->len() == sizeof(value), "invalid field len");
+
+    char* field_data = record.data() + field_->offset();
+    memcpy(field_data, &value, sizeof(value));
+}
+
+int Field::get_date(const Record& record)
+{
+    // 复用之前在 Value 类中补充的 DATES 读取能力
+    Value value(field_->type(), const_cast<char*>(record.data() + field_->offset()), field_->len());
+    return value.get_int();
+}

@@ -43,6 +43,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/scalar_group_by_physical_operator.h"
 #include "sql/operator/table_scan_vec_physical_operator.h"
 #include "sql/optimizer/physical_plan_generator.h"
+#include "sql/operator/update_physical_operator.h"
+#include "sql/operator/update_logical_operator.h"
 
 using namespace std;
 
@@ -74,6 +76,11 @@ RC PhysicalPlanGenerator::create(LogicalOperator &logical_operator, unique_ptr<P
     case LogicalOperatorType::DELETE: {
       return create_plan(static_cast<DeleteLogicalOperator &>(logical_operator), oper);
     } break;
+
+    case LogicalOperatorType::UPDATE: {
+        rc = create_update_operator(static_cast<UpdateLogicalOperator&>(logical_operator), oper);
+        break;
+    }
 
     case LogicalOperatorType::EXPLAIN: {
       return create_plan(static_cast<ExplainLogicalOperator &>(logical_operator), oper);
@@ -361,6 +368,30 @@ RC PhysicalPlanGenerator::create_plan(GroupByLogicalOperator &logical_oper, std:
 
   oper = std::move(group_by_oper);
   return rc;
+}
+
+RC PhysicalPlanGenerator::create_update_operator(LogicalOperator& logical_oper, std::unique_ptr<PhysicalOperator>& physical_oper)
+{
+    RC rc = RC::SUCCESS;
+    UpdateLogicalOperator& update_logical_oper = static_cast<UpdateLogicalOperator&>(logical_oper);
+
+    // 1. 递归转换所有的子节点 (TableScan -> Predicate)
+    std::unique_ptr<PhysicalOperator> child_physical_oper;
+    if (logical_oper.children().size() > 0) {
+        rc = create(*logical_oper.children()[0], child_physical_oper);
+        if (rc != RC::SUCCESS) {
+            return rc;
+        }
+    }
+
+    // 2. 实例化 UPDATE 物理算子
+    std::unique_ptr<PhysicalOperator> update_oper = std::make_unique<UpdatePhysicalOperator>(update_logical_oper.update_stmt());
+    if (child_physical_oper) {
+        update_oper->add_child(std::move(child_physical_oper));
+    }
+
+    physical_oper = std::move(update_oper);
+    return rc;
 }
 
 RC PhysicalPlanGenerator::create_vec_plan(TableGetLogicalOperator &table_get_oper, unique_ptr<PhysicalOperator> &oper)
